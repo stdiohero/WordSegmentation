@@ -16,9 +16,13 @@ def main():
         a.append(x)
         add_set(a, s2)
 
-    print(s <= s2)
-    print(s & s2)
-    print(s | s2)
-    print(s2 - s)
+#    print(s <= s2)
+#    print(s & s2)
+#    print(s | s2)
+#    print(s2 - s)
 
-main()
+#main()
+
+s = 'hello,你好吗。'
+print(s[0:5])
+print(s[6:10])
