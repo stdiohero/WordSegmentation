@@ -109,4 +109,4 @@ def find_symbol():
 
 
 generator()
-find_symbol()
+#find_symbol()

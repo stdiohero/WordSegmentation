@@ -69,11 +69,26 @@ def main():
 #a = '[\u00b7\u00d7\u2014\u2018\u2019\u201c\u201d\u2026\u3001\u3002\u300a' \
 #    '\u300b\u300e\u300f\u3010\u3011\uff01\uff08\uff09\uff0c\uff1a\uff1b\uff1f]'
 #import re
-#if re.match(a, '……'):
+#if re.match('\u00b7', '·'):
 #    print('YES')
 
-kk = []
-for x in range(0, 5):
-    kk.insert(0, x)
-print(kk)
+#kk = []
+#for x in range(0, 5):
+#    kk.insert(0, x)
+#print(kk)
+
+#a = ['1', '2', '3', '4']
+#print(''.join(a))
+import jieba
+context = []
+with open('testset.txt', 'rb') as f:
+    for line in f.readlines():
+        context.append(line.decode('gbk').strip())
+
+with open('jieba_cut.txt', 'wb') as f:
+    for line in context:
+        jieba_cut = ' '.join(list(jieba.cut(line))) + '\n'
+        f.write(jieba_cut.encode('gbk'))
+
+
 

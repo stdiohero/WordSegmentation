@@ -4,6 +4,7 @@
 
 import re
 import logging
+import time
 from math import *
 
 def is_chinese(word):
@@ -15,9 +16,9 @@ def is_chinese(word):
 
 def is_symbol(word):
     pattern = '[\u00b7\u00d7\u2014\u2018\u2019\u201c\u201d\u2026\u3002\u300a' \
-            '\u300b\u300e\u300f\u3010\u3011\uff01\uff08\uff09\uff0c\uff1a\uff1b\uff1f]'
-    #不包含顿号'、'(u3001),
-    #包含 · × — ‘ ’ “ ” … 。 《 》 『 』 【 】 ! （ ） ， ： ； ？
+            '\u300b\u300e\u300f\u3010\u3011\uff01\uff08\uff09\uff0c\uff1a\uff1b\uff1f\u3001]'
+    #update: 包含顿号'、'(u3001),
+    #包含 · × — ‘ ’ “ ” … 。 《 》 『 』 【 】 ! （ ） ， ： ； ？、
     if re.match(pattern, word):
         return True
     return False
@@ -47,10 +48,10 @@ def parse_files(filename):
     def update_uni_count(cur_words):
         #用于更新uni_count中每个词语出现的数量
         for word in cur_words:
-            if word in uni_count:
-                uni_count[word] += 1
-            else:
-                uni_count[word] = 1
+            uni_count['default'] += 1
+            if word not in uni_count:
+                uni_count[word] = 0
+            uni_count[word] += 1
     def update_bi_count(cur_words):
         #用于计算相邻词语出现的次数，更新bi_count
         #s使用嵌套字典存储
@@ -62,15 +63,15 @@ def parse_files(filename):
             if fw not in bi_count:
                 bi_count[fw] = dict()
             if bw not in bi_count[fw]:
-                bi_count[fw][bw] = 1
-            else:
-                bi_count[fw][bw] += 1
+                bi_count[fw][bw] = 0
+            bi_count[fw][bw] += 1
             it_bw += 1
             it_fw += 1
 
     uni_count = dict()
     bi_count = dict()
     word_dict = set()
+    uni_count['default'] = 0 #default用来统计出现了多少词
     with open(filename, 'rb') as f:
         while True:
             temp_seg = f.readline()
@@ -94,15 +95,18 @@ def smoothing_func(func_param='laplace'):
         # ARPA, p = log10(P)
         abs_V = len(word_dict)
         P_laplace = dict()
-        for bw, fw_dict in bi_count.items():
-            P_laplace[bw] = dict()
-            for fw, cnt in bi_count[bw].items():
+        for fw, bw_dict in bi_count.items():
+            for bw, cnt in bw_dict.items():
+                if bw not in P_laplace:
+                    P_laplace[bw] = dict()
                 P_laplace[bw][fw] = log10((cnt + 1) / (uni_count[fw] + abs_V))
-        #根据公式的特性，对于未在语料库中出现的二元词组，其bi-gram的值只由fw决定，因此
-        #简化二重循环计算为一重循环。
+        #根据公式的特性，对于未在语料库中出现的二元词组，则其bi-gram的值退化为uni-gram
         P_laplace['default'] = dict()
-        for fw, cnt in uni_count.items():
-            P_laplace['default'][fw] = log10((0 + 1) / (cnt + abs_V))
+        for w, cnt in uni_count.items():
+            P_laplace['default'][w] = log10((0 + 1) / (cnt + abs_V))
+            if w not in P_laplace:
+                P_laplace[w] = dict()
+            P_laplace[w]['default'] = log10((0 + 1) / (cnt + abs_V))
         return P_laplace
 
     smoothing_func_list = {
@@ -110,24 +114,25 @@ def smoothing_func(func_param='laplace'):
     }
     return smoothing_func_list[func_param]
 
-def write2file(modelname, word_dict, uni_count, bi_count):
+def write2file(word_dict, uni_count, bi_count, bi_model, uni_model, dict_save_path):
     laplace_smoothing = smoothing_func()
     p_laplace = laplace_smoothing(word_dict, uni_count, bi_count)
 
-    with open(modelname, 'wb') as f:
+    with open(bi_model, 'wb') as f:
        for bw, fw_list in p_laplace.items():
-            logging.info('%s is done.' % bw)
             for fw, p in fw_list.items():
                 str = '%s %s %f\n' % (bw, fw, p)
                 f.write(str.encode('utf-8'))
 
 def test():
-    filename = '199801.txt'
-    modelname = 'bigram.model'
+    filename = r'.\data\199801.txt'
+    bi_model = r'.\data\bigram.model'
+    uni_model = r'.\data\unigram.model'
+    dict_save_path = r'.\data\WordDict.txt'
     print('begin....')
     word_dict, uni_count, bi_count = parse_files(filename)
 
-    write2file(modelname, word_dict, uni_count, bi_count)
+    write2file(word_dict, uni_count, bi_count, bi_model, uni_model, dict_save_path)
 
 #    with open('bigram.model', 'wb') as f:
 #        laplace_smoothing = smoothing_func()
@@ -138,5 +143,7 @@ def test():
 #                str = '%s %s %f\n' % (bw, fw, p)
 #                f.write(str.encode('utf-8'))
 #            print('')
-
+start = time.time()
 test()
+end = time.time()
+print('Cost %s...' % (end - start))

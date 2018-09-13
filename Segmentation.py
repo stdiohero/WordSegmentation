@@ -4,54 +4,14 @@
 
 import os
 import re
-import queue
 
-def FMM_segmentation(sentence, dictionary, width=10):
-    #前向最大匹配，默认匹配窗口长度为5
-    result = [] #返回结果
-    start = 0 # 截取窗口的左端
-    while start < len(sentence):
-        end = start + width
-        if end > len(sentence):
-            end = len(sentence)
-        #截取窗口的右端
-
-        while start < end:
-            sub_s = sentence[start: end]
-
-            if sub_s in dictionary or len(sub_s) == 1:
-                result.append(sub_s)
-                start = end
-                break
-            end -= 1
-
-    return result
-
-def BMM_segmentation(sentence, dictionary, width=10):
-    #后向最大匹配， 默认匹配窗口长度为5
-    result = []
-    end = len(sentence)
-    while end > 0:
-        start = end - width
-        if start < 0:
-            start = 0
-
-        while start < end:
-            sub_s = sentence[start: end]
-            if sub_s in dictionary or len(sub_s) == 1:
-                result.append(sub_s)
-                end = start
-                break
-            start += 1
-
-    result.reverse()
-    return result
+def is_LetterOrDigital(s):
+    pattern = r'^[0-9a-zA-Z]+$'
+    return re.match(pattern=pattern, string=s)
 
 def full_segmentation(sentence, dictionary, max_width = 12):
     #全切分策咯，句子长度为N，构建[0, N+1]的序列，利用数对(i, j)表示切分的词语sentence[i:j]
-    #返回的seg_pool是按照字典序排序的
     seg_relation = dict()
-    seg_pool = []
     k = 0
     maxN = len(sentence)
     while k < maxN:
@@ -59,9 +19,8 @@ def full_segmentation(sentence, dictionary, max_width = 12):
         end = min(k +max_width, maxN)
         while end > k:
             cur_word = sentence[k:end]
-            if cur_word in dictionary or end - k == 1:
+            if cur_word in dictionary or end - k == 1 or is_LetterOrDigital(cur_word):
                 seg_relation[k].append(end)
-                seg_pool.append((k, end))
             end -= 1
         k += 1
     return seg_relation
@@ -72,8 +31,8 @@ def calc_mp(sentence, dictionary):
     seg_relation = full_segmentation(sentence, dictionary)
 
     maxN = len(sentence)
-    INF = float('inf')
     default = 'default'
+    INF = float('inf')
     route = dict() #存储路径
     dp = [[-INF for y in range(0, maxN + 1)] for x in range(0, maxN + 1)] #创建一个(maxN+1)*(maxN+1)的矩阵
 
@@ -96,40 +55,62 @@ def calc_mp(sentence, dictionary):
                     continue
                 #此时i等效于j
                 fw = sentence[k:i]
-                p = -INF
-                if fw in model[bw]:
-                    p = model[bw][fw]
-                    print('%s %s %f' % (bw, sentence[k:i], p))
-
-                curP = dp[k][i] + p #此处分词的右界为i
-                print('----------> %d %d: %f + %f = %f' % (k, i, dp[k][i], p, curP))
+                if fw not in model[bw]:
+                    fw = default
+                curP = dp[k][i] + model[bw][fw] #此处分词的右界为i
+#                print('%s -> %s ----------> %d %d: %f + %f = %f' % (fw, bw, k, i, dp[k][i], model[bw][fw], curP))
                 if curP >= maxP:
                     maxP = curP
                     pre_node = (k, i)
             dp[i][j] = maxP
             route[(i, j)] = pre_node
-
 #    for k, v in route.items():
 #        print('%s -> %s' % (str(k), str(v)))
 #        if v:
 #            print('%s -> %s' % (sentence[k[0]:k[1]], sentence[v[0]:v[1]]))
 #    exit(1)
-
     best_seg = []
     cur_node = (maxN - 1, maxN)
     while cur_node:
         word = sentence[cur_node[0]:cur_node[1]]
         best_seg.insert(0, word)
         cur_node = route[cur_node]
+    final_seg = ''
+    for w in best_seg:
+        if w != 'S' and w != 'E' and w != ' ':
+            final_seg += w + ' '
+    return final_seg, dp[maxN - 1][maxN]
 
-    return best_seg, dp[maxN - 1][maxN]
+def is_symbol(word):
+    pattern = '[\u00d7\u2014\u2018\u2019\u201c\u201d\u2026\u3002\u300a' \
+            '\u300b\u300e\u300f\u3010\u3011\uff01\uff08\uff09\uff0c\uff1a\uff1b\uff1f\u3001]'
+    #update: 包含顿号、(u3001),不包含·(u00b7)
+    #包含  × — ‘ ’ “ ” … 。 《 》 『 』 【 】 ! （ ） ， ： ； ？、
+    if re.match(pattern, word):
+        return True
+    return False
 
+def pre_cut(sentence):
+    sentence_list = []
+    buff = ''
+    for w in sentence:
+        if is_symbol(w) and len(buff) > 0:
+            buff = 'S ' + buff + ' E' + w
+            sentence_list.append(buff)
+            buff = ''
+        else:
+            buff += w
+    if len(buff) > 0:
+        buff = 'S' + buff + 'E'
+        sentence_list.append(buff)
+    return ''.join(sentence_list)
 
-def dis_ambiguity(sentence):
+def cut(text):
     #要求输入的sentence前后加入了S E
     dict_file = 'WordDict.txt'
     dictionary = read_dict(dict_file)
-    best_seg, maxP = calc_mp(sentence, dictionary)
+    sentence_list = pre_cut(text)
+    best_seg, maxP = calc_mp(sentence_list, dictionary)
     return best_seg, maxP
 
 def load_model(filename):
@@ -154,33 +135,20 @@ def read_dict(filename):
             if not word:
                 break
             dictionary.add(word.decode().strip()) # 解码之后，将词语后面的换行符'\n'去掉
-
     return dictionary
 
 def test():
-    filename = 'WordDict.txt'
-    dictionary = read_dict(filename)
-    sentence = 'S北京邮电大学E'
-    sentence2 = 'S中华人民共和国E'
-    sentence2 = 'S同胞们朋友们女士们先生们E'
-#    seg = full_segmentation(sentence, dictionary)
-#    for i, j_list in seg.items():
-#        for j in j_list:
-#            print('%d %d  %s' % (i, j, sentence[i:j]))
-    best_seg, maxP = dis_ambiguity(sentence2)
-    print(best_seg)
-    print(maxP)
-#    seg1 = FMM_segmentation(sentence, dictionary)
-#    seg2 = BMM_segmentation(sentence, dictionary)
-#    print(seg1)
-#    print(seg2)
+    test_file = 'testset.txt'
+    text = []
+    with open(test_file, 'rb') as f:
+        for line in f.readlines():
+            text.append(line.decode('gbk').strip())
 
-def test_model():
-    model = load_model('bigram.model')
-    for bw, fw_list in model.items():
-        for fw, p in model[bw].items():
-            if bw == 'default' and fw == '中':
-                print('%s %s %f' % (bw, fw, p))
-                print(model[bw][fw])
+    with open('2017140491.txt', 'wb') as f:
+        for s in text:
+            result, maxP = cut(s)
+            f.write(result.encode('gbk'))
+            f.write('\n'.encode('gbk'))
 
-test()
+#test()
+print(cut('今天好开心呀！'))
